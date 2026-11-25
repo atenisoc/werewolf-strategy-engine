@@ -1,0 +1,25 @@
+{
+  "name": "werewolf-strategy-engine",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Rule-based Werewolf (Mafia) AI engine for reasoning, strategy, simulation and experimentation. No LLM, no API.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/atenisoc/werewolf-strategy-engine.git" },
+  "homepage": "https://kayaigoing.org/hitori-jinro/",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "sim": "node dist/sim.js",
+    "sim:1000": "node dist/sim.js --games 1000 --out out",
+    "audit": "node scripts/audit.mjs",
+    "benchmark": "node scripts/benchmark.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.0"
+  }
+}

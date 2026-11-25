@@ -1,0 +1,50 @@
+# Daily snapshot of GitHub traffic (GitHub keeps views / clones for only 14 days).
+# Appends one JSON line per day to traffic/traffic.jsonl on the `traffic` branch.
+# Setup (once): repository Variables → TRAFFIC_ENABLED = true, and a repository Secret TRAFFIC_TOKEN holding a
+# fine-grained PAT for this repository with "Administration: Read-only" (traffic API) and "Contents: Read and write".
+name: Traffic snapshot
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    if: ${{ vars.TRAFFIC_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Switch to traffic branch (create if missing)
+        run: |
+          git config user.name 'traffic-bot'
+          git config user.email 'traffic-bot@users.noreply.github.com'
+          if git show-ref --verify --quiet refs/remotes/origin/traffic; then
+            git checkout traffic
+          else
+            git checkout --orphan traffic
+            git rm -rf --quiet . || true
+            echo '# traffic snapshots' > README.md
+            git add README.md && git commit -m 'traffic: init'
+          fi
+      - name: Collect
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p traffic
+          day=$(date -u +%F)
+          views=$(gh api repos/$REPO/traffic/views)
+          clones=$(gh api repos/$REPO/traffic/clones)
+          repo=$(gh api repos/$REPO --jq '{stars:.stargazers_count,forks:.forks_count,watchers:.subscribers_count,open_issues:.open_issues_count}')
+          rel=$(gh api repos/$REPO/releases --jq '[.[] | {tag:.tag_name, downloads:([.assets[].download_count] | add // 0)}]')
+          jq -c -n --arg day "$day" --argjson views "$views" --argjson clones "$clones" --argjson repo "$repo" --argjson releases "$rel" \
+            '{day:$day, views:{count:$views.count, uniques:$views.uniques}, clones:{count:$clones.count, uniques:$clones.uniques}, repo:$repo, releases:$releases, views_daily:$views.views, clones_daily:$clones.clones}' \
+            >> traffic/traffic.jsonl
+      - name: Commit
+        run: |
+          git add traffic/traffic.jsonl
+          git commit -m "traffic: $(date -u +%F)" || echo 'nothing to commit'
+          git push origin traffic

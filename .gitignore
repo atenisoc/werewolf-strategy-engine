@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.jsonl
+.env
+.env.*
+.build/
+out/
+bench/
+/feat*.jsonl
+.DS_Store
+Thumbs.db
+src/ui/assets.gen.ts

@@ -1,0 +1,186 @@
+<title>ひとり人狼 — 都道府県のAIと遊ぶ人狼ゲーム</title>
+<meta name="description" content="人狼を一人で遊べる無料ブラウザゲーム。15人の都道府県AIと5〜15人村で対戦。思考ログで推理を振り返れます。登録・インストール不要。">
+<link rel="canonical" href="https://kayaigoing.org/hitori-jinro/">
+<meta name="theme-color" content="#1a2030">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,__FAVICON__">
+<meta property="og:title" content="ひとり人狼 — 都道府県のAIと遊ぶ人狼ゲーム">
+<meta property="og:description" content="一人で遊べる無料の人狼ゲーム。都道府県のAIと対戦し、思考ログで推理を振り返ろう。">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://kayaigoing.org/hitori-jinro/">
+<meta property="og:image" content="https://kayaigoing.org/hitori-jinro/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ひとり人狼、都道府県のAIと遊ぶ人狼ゲーム">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"ひとり人狼","description":"都道府県のルールベースAIと一人で遊ぶ無料の人狼ゲーム。5〜15人村に対応。","url":"https://kayaigoing.org/hitori-jinro/","image":"https://kayaigoing.org/hitori-jinro/og.png","inLanguage":"ja","applicationCategory":"Game","operatingSystem":"Web browser","gamePlatform":"Web browser","playMode":"SinglePlayer","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"JPY"}}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=optional">
+<style>/*__CSS__*/</style>
+<!--BODY-->
+<div id="bg" aria-hidden="true"></div>
+<div class="app">
+  <h1 class="sr-only">ひとり人狼 — 一人で遊べる無料ブラウザ人狼ゲーム</h1>
+  <div class="main">
+    <!-- 固定ヘッダー: 場面・生存数・操作 -->
+    <header class="topbar">
+      <div class="phaseNow" id="phaseNow">ひとり人狼</div>
+      <span class="dim small" id="aliveInfo"></span>
+      <span class="spacer"></span>
+      <button class="ib" id="pauseBtn" type="button" title="一時停止／再開">⏸</button>
+      <button class="ib" id="skipBtn" type="button" title="最速で進める">⏩</button>
+      <button class="ib" id="resultBtn" type="button" title="結果" hidden>🏁</button>
+      <button class="ib" id="setupBtn" type="button" title="設定・新しい試合">⚙</button>
+    </header>
+    <!-- 固定: 参加者(丸アイコン一列) -->
+    <div class="seatstrip" id="seats"></div>
+    <!-- 固定: 自分の役職(1行) -->
+    <div class="roleline" id="roleBanner"></div>
+    <!-- スクロール: 進行ログ -->
+    <div class="feedwrap">
+      <div class="filterbar" id="filterBar" hidden><span id="filterText"></span><span class="spacer"></span><button class="btn ghost small" id="filterClear" type="button">解除</button></div>
+      <div id="feed"></div>
+    </div>
+    <!-- 固定フッター: 場面の案内 + 行動 -->
+    <div class="dock" id="dock">
+      <div id="action"></div>
+    </div>
+  </div>
+  <!-- PC: 右カラム(固定) -->
+  <aside class="side">
+    <section class="card">
+      <h2>参加者</h2>
+      <div class="seats" id="seatsList"></div>
+      <div class="small dim" style="margin-top:6px">バーは名指しされた回数。占CO/霊CO/狩COは公開された名乗りです。</div>
+    </section>
+    <section class="card">
+      <h2>公開情報（CO・結果）</h2>
+      <div id="pubinfo"></div>
+    </section>
+  </aside>
+</div>
+
+<!-- 設定シート(⚙) -->
+<div class="sheet" id="setupSheet" hidden>
+  <div class="box">
+    <div class="titleBlock">
+      <h2 class="titleMain">ひとり人狼</h2>
+      <div class="titleSub">都道府県のAIと遊ぶ人狼ゲーム</div>
+      <div class="titleNote">一人で遊べる無料ブラウザ人狼ゲーム。相手は全員AI。5〜15人村で推理を楽しめます。</div>
+    </div>
+    <div class="row"><b>⚙ ゲーム設定</b><span class="spacer"></span><button class="btn ghost small" id="setupClose" type="button">閉じる</button></div>
+    <div class="setgrid">
+      <label>人数 <select id="nSel"></select></label>
+      <label>モード <select id="modeSel"><option value="play">参加（あなたが遊ぶ）</option><option value="watch">観戦（AI同士）</option></select></label>
+      <label title="参加モードでのあなたの役職。おまかせならseedで決まります">役職 <select id="roleSel"></select></label>
+      <label>seed <input type="text" id="seedInput" size="8" inputmode="numeric" placeholder="空欄で自動"></label>
+      <button class="btn ghost small" id="diceBtn" type="button" aria-label="seedをランダムに設定">🎲</button>
+      <label>速度 <select id="speedSel"><option value="slow">遅</option><option value="mid">中</option><option value="fast">速</option><option value="max">最速</option></select></label>
+      <label title="キャラクター（都道府県）ごとの口調を発言に乗せます"><input type="checkbox" id="dialectChk"> 方言</label>
+      <label title="プレイ中でも全員の役職を表示します（ネタバレ）"><input type="checkbox" id="devChk"> 開発者モード（役職を表示）</label>
+    </div>
+    <div class="row">
+      <button class="btn" id="startBtn" type="button">▶ 新しい試合を開始</button>
+    </div>
+    <div class="row">
+      <input type="text" id="codeInput" aria-label="再現コード" placeholder="再現コードを貼り付け" size="24">
+      <button class="btn ghost small" id="codeBtn" type="button">コードで再生</button>
+    </div>
+    <div id="statsBox"></div>
+    <details><summary>ルール早わかり</summary><ul class="rules" id="rulesList"></ul></details>
+    <details id="batchBox">
+      <summary>🧪 AI同士の自動対戦（開発者向け）</summary>
+      <div class="row" style="margin-top:8px">
+        <label class="lbl">開始seed <input type="text" id="batchSeed" size="6" value="1" inputmode="numeric"></label>
+        <label class="lbl"><input type="checkbox" id="auditChk"> 情報漏洩チェックも実行</label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="batch1" type="button">1試合</button>
+        <button class="btn" id="batch100" type="button">100試合</button>
+        <button class="btn" id="batch1000" type="button">1000試合</button>
+        <span id="batchProg" class="small dim"></span>
+      </div>
+      <div class="row" id="dlRow" hidden style="margin-top:8px">
+        <button class="btn ghost small" id="dlCsv" type="button">CSV保存</button>
+        <button class="btn ghost small" id="dlJson" type="button">JSON保存</button>
+      </div>
+      <pre id="batchOut"></pre>
+      <div id="anomList"></div>
+    </details>
+    <footer><details class="guide"><summary>遊び方・役職・よくある質問</summary>
+      <h2>ひとり人狼の遊び方</h2>
+      <p>ひとり人狼は、都道府県をモチーフにしたAIたちと一人で遊べる無料のブラウザ人狼ゲームです。登録・インストール不要で、スマホでもPCでも遊べます。</p>
+      <ol>
+        <li>人数（5・7・9・13・15人）とモードを選んで始めます。「参加」は自分も村の一員として遊び、「観戦」はAI同士の対局を眺めます。</li>
+        <li>昼は話し合い。怪しい人を疑う、信頼できる人をかばう、役職を名乗る（CO）などの発言を選びます。迷ったら「様子見」でも大丈夫です。</li>
+        <li>投票で最も票を集めた人が処刑されます。5人・7人村は初日の処刑がなく、9人以上は初日から投票します。</li>
+        <li>夜は役職ごとの行動です。占い師は1人を占い、狩人は1人を守り、人狼は1人を襲います。</li>
+        <li>人狼が全員いなくなれば村の勝ち、人狼の数が残りの人数と同じかそれ以上になれば人狼の勝ちです。終わったら「AI思考を見る」で、AIがなぜその判断をしたかを振り返れます。</li>
+      </ol>
+      <h3>人数ごとの役職</h3>
+      <ul>
+        <li>5人村：人狼1・占い師1・村人3（はじめての人におすすめ）</li>
+        <li>7人村：人狼2・占い師1・狩人1・村人3</li>
+        <li>9人村：人狼2・狂人1・占い師1・霊能者1・狩人1・村人3</li>
+        <li>13人村：人狼3・狂人1・占い師1・霊能者1・狩人1・村人6</li>
+        <li>15人村：人狼3・狂人1・妖狐1・占い師1・霊能者1・狩人1・共有者2・村人5</li>
+      </ul>
+      <h3>役職の説明</h3>
+      <ul>
+        <li><b>村人</b>：特別な力はありません。発言と投票から人狼を探します。</li>
+        <li><b>占い師</b>：夜に1人を占い、人狼かどうか（黒か白か）が分かります。</li>
+        <li><b>霊能者</b>：処刑された人が人狼だったかどうかが分かります。</li>
+        <li><b>狩人</b>：夜に1人を人狼の襲撃から守ります。</li>
+        <li><b>共有者</b>：2人1組で、お互いが村人側だと分かっています。</li>
+        <li><b>人狼</b>：夜に1人を襲います。昼は村人のふりをします。</li>
+        <li><b>狂人</b>：人狼の味方をする人間です。占い師を騙って村を混乱させます。</li>
+        <li><b>妖狐</b>：どちらの陣営でもなく、最後まで生き残れば単独で勝ちます。人狼に襲われても死にませんが、占われると死にます。</li>
+      </ul>
+      <h3>よくある質問</h3>
+      <dl>
+        <dt>人狼は一人で練習できますか？</dt>
+        <dd>できます。相手はすべてAIなので、人を集めなくても好きな時間に1局遊べます。CO・投票・占いの流れを繰り返し練習するのに向いています。</dd>
+        <dt>無料ですか？登録は必要ですか？</dt>
+        <dd>無料で、登録もインストールも不要です。スマホ・PCのブラウザで開くだけで遊べます。</dd>
+        <dt>AIはChatGPTなどの生成AIですか？</dt>
+        <dd>いいえ。ルールに基づいて判断するAIで、LLMや外部のAIサービスは使っていません。判断はルール・性格・乱数を組み合わせて決めています。</dd>
+        <dt>人狼のルールをまったく知らなくても遊べますか？</dt>
+        <dd>遊べます。画面上部に「いま何をするところか」の説明が出ます。まずは5人村から始めるのがおすすめです。</dd>
+        <dt>同じ対局をもう一度遊べますか？</dt>
+        <dd>設定の「seed」に同じ値を入れて同じ操作をすると、同じ展開を再現できます。</dd>
+      </dl>
+      <h3>あわせて読む・遊ぶ</h3>
+      <ul class="related">
+        <li><a href="/learn/hajimete-werewolf/">初めての人狼｜ルールを簡単に解説</a></li>
+        <li><a href="/learn/werewolf-solo-practice/">人狼を一人で練習する方法</a></li>
+        <li><a href="/learn/werewolf-co/">人狼のCOとは</a>・<a href="/learn/werewolf-gray/">人狼のグレーとは</a></li>
+        <li><a href="/werewolf/">初めての人狼（7人村を短く体験）</a></li>
+        <li><a href="/coc/kisaragi/">きさらぎ駅（選択肢型ホラー）</a></li>
+        <li><a href="/">Play First のほかのゲーム</a></li>
+      </ul>
+    </details><details><summary>このゲームについて・v__VERSION__</summary><p>ひとり人狼 — 都道府県のAIと遊ぶ人狼ゲーム。登録不要、無料。相手はルールベースAIで、LLM・外部AI APIは使用しません。同じseedと同じ操作で対戦を再現できます。</p><p>立ち絵・背景・挿絵は生成AIで作成しています。設定・戦績はこのブラウザに保存されます。公開サイトではCookie・ブラウザストレージを使わないアクセス集計を行います。</p><p>15人村には共有者2人と妖狐が入ります。</p><p class="oss">このゲームのAIエンジンはオープンソースです（MIT）。<a href="https://github.com/atenisoc/werewolf-strategy-engine" rel="noopener" target="_blank">GitHub: Werewolf Strategy Engine</a> — ソースコード・推理アルゴリズムの解説・自作戦術の追加と比較の手順・改善提案（Issue）はこちら。</p></details></footer>
+  </div>
+</div>
+
+<!-- 情報シート(スマホ: 役職の詳細 / CO情報 / 参加者) -->
+<div class="sheet" id="infoSheet" hidden>
+  <div class="box">
+    <div class="row"><b id="infoTitle">情報</b><span class="spacer"></span><button class="btn ghost small" id="infoClose" type="button">閉じる</button></div>
+    <div id="infoBody"></div>
+  </div>
+</div>
+
+<!-- 結果シート -->
+<div class="sheet" id="endSheet" hidden>
+  <div class="box" id="endCard"></div>
+</div>
+
+<div class="modal" id="thinkModal" hidden>
+  <div class="box">
+    <div class="row"><b>🧠 AI思考ログ</b><select id="thinkPlayer" aria-label="思考ログを見るAI"></select><button class="btn ghost small" id="thinkClose" type="button">閉じる</button></div>
+    <div class="small dim">各AIが判断したときの疑惑度・理由・候補ごとの点数（ルール／性格／乱数）です。ネタバレを含みます。</div>
+    <div id="thinkOut"></div>
+  </div>
+</div>
+<script>/*__JS__*/</script>
+<script>/*__COUNTER__*/</script>
