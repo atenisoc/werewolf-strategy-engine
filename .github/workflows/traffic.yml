@@ -1,50 +1,68 @@
 # Daily snapshot of GitHub traffic (GitHub keeps views / clones for only 14 days).
-# Appends one JSON line per day to traffic/traffic.jsonl on the `traffic` branch.
-# Setup (once): repository Variables → TRAFFIC_ENABLED = true, and a repository Secret TRAFFIC_TOKEN holding a
-# fine-grained PAT for this repository with "Administration: Read-only" (traffic API) and "Contents: Read and write".
+# Saves dated aggregate JSON on the traffic branch. Enabled by owner approval 2026-11-26.
+# Optional TRAFFIC_TOKEN: this repository only, Administration read-only.
 name: Traffic snapshot
 on:
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/traffic.yml']
 permissions:
   contents: write
+concurrency:
+  group: repository-metrics
+  cancel-in-progress: false
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    if: ${{ vars.TRAFFIC_ENABLED == 'true' }}
+    if: ${{ vars.TRAFFIC_ENABLED != 'false' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Switch to traffic branch (create if missing)
         run: |
+          set -euo pipefail
           git config user.name 'traffic-bot'
           git config user.email 'traffic-bot@users.noreply.github.com'
           if git show-ref --verify --quiet refs/remotes/origin/traffic; then
             git checkout traffic
           else
             git checkout --orphan traffic
-            git rm -rf --quiet . || true
+            git rm -rf --quiet .
             echo '# traffic snapshots' > README.md
             git add README.md && git commit -m 'traffic: init'
           fi
       - name: Collect
         env:
-          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           mkdir -p traffic
           day=$(date -u +%F)
-          views=$(gh api repos/$REPO/traffic/views)
-          clones=$(gh api repos/$REPO/traffic/clones)
+          views=null; clones=null; status=not_configured
+          if [ -n "$TRAFFIC_TOKEN" ]; then
+            if views=$(GH_TOKEN="$TRAFFIC_TOKEN" gh api "repos/$REPO/traffic/views") && clones=$(GH_TOKEN="$TRAFFIC_TOKEN" gh api "repos/$REPO/traffic/clones"); then
+              status=ok
+            else
+              views=null; clones=null; status=unavailable
+              echo '::warning::Traffic API unavailable; public metrics are still saved.'
+            fi
+          fi
           repo=$(gh api repos/$REPO --jq '{stars:.stargazers_count,forks:.forks_count,watchers:.subscribers_count,open_issues:.open_issues_count}')
-          rel=$(gh api repos/$REPO/releases --jq '[.[] | {tag:.tag_name, downloads:([.assets[].download_count] | add // 0)}]')
-          jq -c -n --arg day "$day" --argjson views "$views" --argjson clones "$clones" --argjson repo "$repo" --argjson releases "$rel" \
-            '{day:$day, views:{count:$views.count, uniques:$views.uniques}, clones:{count:$clones.count, uniques:$clones.uniques}, repo:$repo, releases:$releases, views_daily:$views.views, clones_daily:$clones.clones}' \
-            >> traffic/traffic.jsonl
+          rel=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[] | {tag:.tag_name,assets:[.assets[] | {id,name,size,download_count}]}' | jq -s '.')
+          jq -c -n --arg day "$day" --arg status "$status" --argjson views "$views" --argjson clones "$clones" --argjson repo "$repo" --argjson releases "$rel" \
+            '{day:$day, traffic_status:$status, views:$views, clones:$clones, repo:$repo, releases:$releases}' \
+            > "traffic/$day.json"
       - name: Commit
         run: |
-          git add traffic/traffic.jsonl
-          git commit -m "traffic: $(date -u +%F)" || echo 'nothing to commit'
-          git push origin traffic
+          set -euo pipefail
+          git add traffic/
+          if ! git diff --cached --quiet; then
+            git commit -m "traffic: $(date -u +%F)"
+            git push origin traffic
+          fi

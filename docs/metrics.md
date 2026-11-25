@@ -4,9 +4,20 @@ GitHub Insights → Traffic shows repository visits and full clones over the las
 
 日本語：リポジトリ閲覧・cloneはInsights → Trafficで確認できます。Releaseの添付ファイルにはファイル別累計DL数があります。GitHub自動生成ソースZIP、全raw取得、Pagesのゲーム利用人数を網羅する集計ではありません。自分や自動処理のアクセスも含み得ます。
 
-## Automation (disabled until owner approval)
+## Automation (enabled 2026-11-26)
 
-Actions → Traffic snapshot is gated by repository variable `TRAFFIC_ENABLED=true`. Scheduled time is 03:17 UTC (12:17 JST); GitHub may delay scheduled jobs. Aggregate snapshots would be public on the traffic branch. No tracking script is added to the game or README.
+Actions → Traffic snapshot runs daily at 03:17 UTC (12:17 JST); GitHub may delay scheduled jobs. Set repository variable `TRAFFIC_ENABLED=false` to pause. Aggregate snapshots are public on the [traffic branch](https://github.com/atenisoc/werewolf-strategy-engine/tree/traffic/traffic). No tracking script is added to the game or README. Public release-download counts, stars and forks work without a personal token. `traffic_status: not_configured` means visits/clones are not available yet, not zero.
+
+### 限定トークンの設定手順
+
+1. GitHub右上アイコン → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token。
+2. 名前は `werewolf-traffic-read`、有効期限は90日など管理できる期間、Resource ownerは `atenisoc`。
+3. Repository accessは **Only select repositories**、**werewolf-strategy-engine** だけ選択。
+4. Repository permissionsは **Administration: Read-only** のみ追加（Metadata: Read-onlyは自動）。Contentsの書き込み権限や全リポジトリ権限は不要。
+5. Generate token後、値はチャットへ貼らず、対象リポジトリ → Settings → Secrets and variables → Actions → Secrets → New repository secret へ直接保存。Nameは **TRAFFIC_TOKEN**、Secretに生成値。
+6. Actions → Traffic snapshot → Run workflow（main）で手動実行。成功後、trafficブランチの最新 `traffic/YYYY-MM-DD.json` に `traffic_status: ok` とviews/clonesが入ることを確認。
+
+トークンはブラウザでユーザー本人が作成してください。期限切れ時は更新して同じSecretを差し替えます。トークンがない／期限切れでも公開DL集計は継続し、閲覧数を0と誤表示しません。
 
 For traffic-history automation, the owner must create a fine-grained token limited to **atenisoc/werewolf-strategy-engine**, with **Administration: read-only** (Metadata read is implicit), then save it as Actions secret **TRAFFIC_TOKEN**. Never paste it into chat, issues, README, or source. Set an expiry and renew when needed. The workflow's GITHUB_TOKEN handles snapshot commits, so the traffic-reading token does not need Contents write.
 
