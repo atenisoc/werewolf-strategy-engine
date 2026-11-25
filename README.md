@@ -4,6 +4,12 @@
 
 > An open-source, rule-based AI engine for Werewolf — built for reasoning, strategy, simulation, and experimentation.
 
+**Werewolf / Mafia game AI in TypeScript.** Deterministic self-play, explainable reasoning, and custom strategy benchmarks — no LLM or paid API.
+
+**ひとり人狼のオープンソース人狼AI**：ルールベースの推理・自作戦術・対戦シミュレーションを試せます。[日本語の使い方](README.ja.md)。
+
+[Play the demo](https://atenisoc.github.io/werewolf-strategy-engine/) · [Download the game and simulator](https://github.com/atenisoc/werewolf-strategy-engine/releases/latest) · [Build your own strategy](docs/extension-guide.md) · [Usage metrics](docs/metrics.md)
+
 ![ひとり人狼 — the browser game built on this engine](docs/images/header.jpg)
 
 [![CI](https://github.com/atenisoc/werewolf-strategy-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/atenisoc/werewolf-strategy-engine/actions/workflows/ci.yml)

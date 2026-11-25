@@ -4,6 +4,12 @@
 
 > LLMを使わないルールベースの人狼AIエンジン。推理・戦術・大量シミュレーション・実験のために。
 
+## 人狼AIを遊ぶ・調べる・改良する
+
+TypeScript製のオープンソース人狼ゲームAIです。推理の理由を読み、自作の戦術を同じseedで比較できます。LLM・有料APIは不要です。
+
+[ブラウザで体験](https://atenisoc.github.io/werewolf-strategy-engine/) · [ゲームHTML・シミュレーターをダウンロード](https://github.com/atenisoc/werewolf-strategy-engine/releases/latest) · [戦術追加の手順](docs/extension-guide.md) · [アクセス・DL集計の見方](docs/metrics.md)
+
 ![ひとり人狼 — このエンジンで動くブラウザゲーム](docs/images/header.jpg)
 
 [![CI](https://github.com/atenisoc/werewolf-strategy-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/atenisoc/werewolf-strategy-engine/actions/workflows/ci.yml)
