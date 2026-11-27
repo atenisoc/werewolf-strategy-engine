@@ -7,52 +7,52 @@ import type { Rng } from '../util/rng';
 import type { Flags } from './flags';
 
 // ============================================================================
-//  Belief = 各プレイヤーが「誰をどれくらい人狼だと思っているか」(疑惑度 0〜100)
-//  - 観測(PlayerObservation)だけから更新する。真の役職は参照しない。
-//  - 変化の理由は台帳(ledger)に残し、「AI思考を見る」で後から確認できる。
+//  Belief = how strongly each player thinks each other player is a werewolf (suspicion 0–100)
+//  - Updated only from observations (PlayerObservation). Never looks at true roles.
+//  - The reason for every change is kept in the ledger, so it can be reviewed afterwards via "AI思考を見る" (view AI reasoning).
 // ============================================================================
 
-// 疑惑度の増減の大きさ(ここを変えるとAIの癖が変わる)。単位はポイント。
+// Size of each suspicion change (changing these changes the AI's habits). Unit: points.
 export const W = {
-  seerBlack: 58, // 占い師の黒判定(信憑性100%のとき)
-  seerWhite: 60, // (第18版 均衡探索: 30→60) // 占い師の白判定
-  fakeSeer: 110, // (第18版: 55→110) // 占い師COが偽物だったときに付く疑惑(信憑性が低いほど加算)
-  fakeReverse: 0, // 偽物の判定は逆に読む強さ(偽の黒先は白寄り、偽の白先は黒寄り)。調整の結果0が最善(0.35→0で村側+5pt。逆読みは狂人の適当な判定にも引きずられる)
-  silent: 3.5, // その日ほぼ発言なし
-  lateChange: 10, // 宣言と投票が違う(人狼の身内切り・票合わせで起きやすく、94%が人狼に付く強い手がかり)
-  accuseTrusted: 4.5, // 自分が信頼する人を疑った人
-  accuseConfirmedWhite: 9, // 確定白(共有者など)を疑った人
-  accuseSame: -2, // 自分と同じ人を疑った人
-  lynchBlackVoter: -12, // (第18版: -6→-12) // 黒だった処刑者に投票していた人
-  lynchWhiteVoter: 5, // 白だった処刑者に投票していた人
-  seerVotePenalty: 24, // (第18版: 48→24) // 本物らしい占い師を疑う/吊る候補から外す強さ(信憑性に比例)
-  defendBlack: 10, // 黒だった処刑者をかばっていた人
-  certainBlack: 99, // 自分の占いで黒
-  certainWhite: 4, // 自分の占いで白
-  fakeMedium: 70, // 自分が霊能者のとき、他の霊能者CO
-  masonTrust: -24, // 共有者CO(定員以内)
-  fakeMason: 80, // 自分が共有者のとき、相方以外の共有者CO
-  hunterTrust: -10, // 狩人CO(定員以内)
-  brokenSeer: 60, // 占いの黒が定員内の霊能結果(白)と食い違った(破綻)占い師CO
-  hunterUnbitten: 18, // 狩人COの翌朝に誰かが死んだ(=人狼は狩人COを噛みに行かなかった)ときの疑い(×晩数)
-  hunterGj: -15, // 狩人COの護衛成功報告が平和な朝と一致(判定チェック○): 人狼が噛みに行って護衛で止めた形=本物寄り
-  hunterGjBroken: 45, // 護衛成功と報告したのに今朝は死者が出ている(判定チェック×): 偽物
-  hunterRivalBlack: -12, // 対抗の狩人COが処刑されて霊能結果が黒だった: 残った定員内の狩人COは本物寄り
-  seerUnbitten: 0, // 占いCOが2人以上で誰も噛まれない朝ごとに占いCO全員へ(×晩数)。検証で村側−7pt(本物まで吊る)だったので0。会話の種としてだけ残す
-  fakeConfirmedComp: 25, // 本物らしい占い師が噛まれたあとに残った占いCO(2人以上)への疑い。狂人が噛まれた可能性もあるので「確定」ではなく「可能性が高い」
-  fakeConfirmedRaw: 0.3, // 同・残った占いCOの信憑性(生の値)の上限(0.03→0.3: 確定扱いにしない。勝率は同じ)
-  fakeConfirmedReverse: 0.2, // 偽物の可能性が高い占いの判定を軽く逆に読む(囲いの白→やや黒寄り)。破綻は別途強く
-  waverPoint: 0, // ブレを指摘された人(検証で差がなかったので0。会話だけ)
-  biteLogic: 0, // 噛まれた人が疑っていた人(+)(検証で差がなかったので0。会話だけ)
-  biteLogicWhite: 5, // 噛まれた人がかばっていた人(−)(正解率75%)
-  silentPoint: 2, // 沈黙を指摘された人
-  coTiming: 0.08, // COの速さ: 先に出た占い師COの信憑性 ×(1+coTiming)、後出し ×(1−coTiming) // 狩人COが噛まれずに夜を越した(1晩ごとに加算。人狼は仲間を噛まない)
-  mediumTrust: -12, // 霊能CO(定員内)。霊能騙りは稀なので1COの霊能はほぼ本物として扱う
-  mediumVotePenalty: 45, // 定員内の霊能COを疑う/吊る候補から外す強さ(役職吊りは最終手段)
-  hunterVotePenalty: 30, // 定員内の狩人COを疑う/吊る候補から外す強さ
-  matchGain: 0.9, // 占い師の判定が霊能結果などと一致したときの信憑性の伸び(1+matchGain*q 倍)
-  compPow: 2.5, // 占い師COへの疑い (1-信憑性)^compPow の指数(調整: 1→2.5。本物らしくなった占い師への疑いを早く消す)
-  whitePow: 2, // 占い師の白判定を信憑性^whitePow で効かせる(囲い対策: 真偽不明の白は信じない)
+  seerBlack: 58, // a seer's black result (at 100% credibility)
+  seerWhite: 60, // (v18 equilibrium search: 30→60) // a seer's white result
+  fakeSeer: 110, // (v18: 55→110) // suspicion attached to a seer claim in case it is fake (the lower the credibility, the more is added)
+  fakeReverse: 0, // how strongly a fake claimant's results are read in reverse (a fake's black target leans white, a fake's white target leans black). Tuning found 0 best (0.35→0 gave the village side +5pt; reverse reading also gets dragged along by the madman's random results)
+  silent: 3.5, // said almost nothing that day
+  lateChange: 10, // declared vote and actual vote differ (common when wolves cut a mate or align votes; a strong clue: 94% of these land on werewolves)
+  accuseTrusted: 4.5, // someone who accused a player I trust
+  accuseConfirmedWhite: 9, // someone who accused a confirmed white (a mason, etc.)
+  accuseSame: -2, // someone who accused the same player I suspect
+  lynchBlackVoter: -12, // (v18: -6→-12) // someone who voted for an executed player who turned out black
+  lynchWhiteVoter: 5, // someone who voted for an executed player who turned out white
+  seerVotePenalty: 24, // (v18: 48→24) // how strongly a likely-real seer is kept off the accuse/execute candidates (proportional to credibility)
+  defendBlack: 10, // someone who defended an executed player who turned out black
+  certainBlack: 99, // black by my own divination
+  certainWhite: 4, // white by my own divination
+  fakeMedium: 70, // when I am the medium: another medium claim
+  masonTrust: -24, // mason claim (within the seat count)
+  fakeMason: 80, // when I am a mason: a mason claim by someone other than my partner
+  hunterTrust: -10, // hunter claim (within the seat count)
+  brokenSeer: 60, // a seer claimant whose black contradicts a within-seat-count medium result (white): a broken claim (破綻)
+  hunterUnbitten: 18, // suspicion when someone died the morning after a hunter claim (= the wolves did not go to bite the hunter claimant) (× number of nights)
+  hunterGj: -15, // a hunter claimant's successful-guard report matches a peaceful morning (result check passed): looks like the wolves went for a bite and the guard stopped it = leans real
+  hunterGjBroken: 45, // reported a successful guard but someone died this morning (result check failed): fake
+  hunterRivalBlack: -12, // the rival hunter claimant was executed and the medium result was black: the remaining within-seat-count hunter claimant leans real
+  seerUnbitten: 0, // applied to every seer claimant on each morning with 2+ seer claims where none of them was bitten (× number of nights). Measured at −7pt for the village side (it executes the real seer too), so 0. Kept only as a conversation topic
+  fakeConfirmedComp: 25, // suspicion on the seer claimants left (2 or more) after a likely-real seer was bitten. The bitten one may have been the madman, so this is "likely fake", not "confirmed fake"
+  fakeConfirmedRaw: 0.3, // same case: cap on the remaining seer claimants' credibility (raw value) (0.03→0.3: do not treat it as confirmed; win rate unchanged)
+  fakeConfirmedReverse: 0.2, // lightly reverse-read the results of a likely-fake seer (a fencing white → leans slightly black). Broken claims are handled separately and more strongly
+  waverPoint: 0, // someone called out for wavering (measured no difference, so 0; conversation only)
+  biteLogic: 0, // someone the bitten player had suspected (+) (measured no difference, so 0; conversation only)
+  biteLogicWhite: 5, // someone the bitten player had defended (−) (75% accurate)
+  silentPoint: 2, // someone called out for being silent
+  coTiming: 0.08, // claim timing: credibility of the earlier seer claim ×(1+coTiming), a late claim ×(1−coTiming) // a hunter claimant survived the night without being bitten (added per night; wolves do not bite their mates)
+  mediumTrust: -12, // medium claim (within the seat count). Fake medium claims are rare, so a single medium claim is treated as almost certainly real
+  mediumVotePenalty: 45, // how strongly a within-seat-count medium claimant is kept off the accuse/execute candidates (executing a role claimant is a last resort)
+  hunterVotePenalty: 30, // how strongly a within-seat-count hunter claimant is kept off the accuse/execute candidates
+  matchGain: 0.9, // credibility gain when a seer's result matches a medium result etc. (× 1+matchGain*q)
+  compPow: 2.5, // exponent in the suspicion on a seer claim, (1-credibility)^compPow (tuned: 1→2.5; clears suspicion on a seer who starts to look real sooner)
+  whitePow: 2, // a seer's white result takes effect as credibility^whitePow (against fencing: don't believe whites from a seer of unknown truth)
 };
 
 export interface LedgerItem {
@@ -75,11 +75,11 @@ export interface SeerClaim {
   fakeComp: number;
   note?: string;
   broken?: boolean;
-  fakeConfirmed?: boolean; // 本物が噛まれたことで偽物が確定した
-  timingDone?: boolean; // COの速さをすでに反映したか // 破綻(黒判定が霊能の白と矛盾)が確定した
-  noteDir?: number; // note が示す向き(-1=信憑性が上がった / +1=下がった)。台帳のラベルは向きが合うときだけ note を使う
-  cursedCredit?: boolean; // 呪殺の手柄をすでに反映したか
-  gjCredit?: boolean; // 狩人の護衛成功報告をすでに反映したか
+  fakeConfirmed?: boolean; // confirmed fake because the real seer was bitten
+  timingDone?: boolean; // whether claim timing has already been applied // confirmed broken (a black result contradicted by the medium's white)
+  noteDir?: number; // direction indicated by note (-1 = credibility went up / +1 = went down). The ledger label uses note only when the direction matches
+  cursedCredit?: boolean; // whether credit for a curse-kill has already been applied
+  gjCredit?: boolean; // whether a hunter's successful-guard report has already been applied
 }
 interface MediumClaim {
   by: number;
@@ -100,13 +100,13 @@ export interface BeliefOpts {
   selfRole: RoleId;
   names: string[];
   personality: Personality;
-  usePrivate: boolean; // 占い結果・霊能結果などの非公開情報を取り込むか
+  usePrivate: boolean; // whether to take in private information such as seer and medium results
   roleCounts: Readonly<Record<RoleId, number>>;
   rng: Rng;
   flags: Flags;
-  w?: Partial<typeof W>; // 疑惑度の重み(W)の上書き(検証・調整用)
-  humanSeat?: number | null; // 人間の席(人間の過去の騙り率で警戒するため)
-  humanRep?: number; // 人間の過去の役職騙り率(0〜1)
+  w?: Partial<typeof W>; // overrides for the suspicion weights (W) (for measurement and tuning)
+  humanSeat?: number | null; // the human's seat (to be wary based on the human's past fake-claim rate)
+  humanRep?: number; // the human's past rate of fake role claims (0–1)
 }
 
 export class Belief {
@@ -117,7 +117,7 @@ export class Belief {
   private ruleScale: Record<string, number>;
   private humanSeat: number | null;
   private humanRep: number;
-  // 人間プレイヤーの過去の騙り率による警戒(その人のCOのたびに一度だけ)
+  // wariness based on the human player's past fake-claim rate (only once, on that player's claim)
   private repWarned = false;
   private warnHuman(by: number, claim: string) {
     if (by !== this.humanSeat || by === this.me || this.repWarned || this.humanRep < 0.34) return;
@@ -139,20 +139,20 @@ export class Belief {
   masonClaims = new Map<number, MasonClaim>();
   hunterClaims = new Set<number>();
   private hunterClaimDay = new Map<number, number>();
-  private hunterSurvived = new Map<number, number>(); // 狩人CO後、噛まれずに越した夜の数
-  private hunterGjDay = new Set<number>(); // 護衛報告の判定チェック済み(by*100+day)
-  // 自分が公開した役職(本物でも騙りでも)。自分が占い師を名乗った以上、対抗の占い師の判定は(表向き)信じない=視点の整合性
+  private hunterSurvived = new Map<number, number>(); // number of nights survived without being bitten since the hunter claim
+  private hunterGjDay = new Set<number>(); // guard reports already result-checked (by*100+day)
+  // the role I publicly claimed (real or fake). Having claimed seer, I (publicly) don't believe the rival seer's results = viewpoint consistency
   myClaim: 'seer' | 'medium' | null = null;
-  // 何かの役職をCOしている人(占い・霊能・狩人・共有者)。占い先の候補から外す(セオリー: 占いはグレーから)
+  // someone who has claimed any role (seer, medium, hunter, mason). Excluded from divination targets (theory: divine from the greys)
   hasClaimed(i: number): boolean {
     return this.seerClaims.has(i) || this.mediumClaims.has(i) || this.masonClaims.has(i) || this.hunterClaims.has(i);
   }
-  stance = new Map<number, number>(); // 今日の各人の「最新の矛先」(疑い/賛成/投票宣言)
+  stance = new Map<number, number>(); // each player's "latest target" today (accusation / agreement / vote declaration)
   lastAccuse: { by: number; target: number } | null = null;
   aliveNow: boolean[];
-  confirmed = new Map<number, Color>(); // 霊能で白黒が判明した処刑者
-  attacked = new Set<number>(); // 夜に死んだ人(襲撃死または呪殺。どちらも人狼ではない)
-  private deathsByDay = new Map<number, number[]>(); // 朝ごとの死者(2人以上なら呪殺が混ざっている)
+  confirmed = new Map<number, Color>(); // executed players whose white/black was revealed by the medium
+  attacked = new Set<number>(); // players who died at night (bitten or curse-killed; neither is a werewolf)
+  private deathsByDay = new Map<number, number[]>(); // deaths per morning (2 or more means a curse-kill is among them)
   day = 0;
 
   private cursor = 0;
@@ -161,8 +161,8 @@ export class Belief {
   private masonPriv = false;
   private masonMates = new Set<number>();
   private stanceDay = -1;
-  private stanceByDay = new Map<number, Map<number, number>>(); // day → (人 → その日の最後の矛先)
-  private askedToday = new Map<number, number>(); // 指名して意見を求められた人 → その日
+  private stanceByDay = new Map<number, Map<number, number>>(); // day → (player → their last target that day)
+  private askedToday = new Map<number, number>(); // player who was named and asked for an opinion → that day
   private intents = new Map<number, Map<number, number>>();
   private votes = new Map<number, Map<number, number>>();
   private defends = new Map<number, { by: number; target: number }[]>();
@@ -177,7 +177,7 @@ export class Belief {
     this.names = o.names;
     this.humanSeat = o.humanSeat ?? null;
     this.humanRep = o.humanRep ?? 0;
-    // 人数別の学習倍率(その人数の表がなければ一番近い人数のもの)
+    // learned scales per player count (if there is no table for this count, use the nearest one)
     { const ns = Object.keys(RULE_SCALE_BY_N).map(Number); const best = ns.sort((a, b) => Math.abs(a - o.n) - Math.abs(b - o.n))[0]; this.ruleScale = RULE_SCALE_BY_N[String(best)] ?? {}; }
     this.p = o.personality;
     this.usePrivate = o.usePrivate;
@@ -188,7 +188,7 @@ export class Belief {
     this.susp = Array(o.n).fill(0);
     this.ledger = Array.from({ length: o.n }, () => []);
     const base = clamp(Math.round((100 * o.roleCounts.werewolf) / (o.n - 1)), 18, 45);
-    const sigma = 1.5 + o.personality.noise * 0.05; // 第一印象のばらつき(気分屋でも±10程度に収める)
+    const sigma = 1.5 + o.personality.noise * 0.05; // spread of first impressions (kept within about ±10 even for a moody personality)
     for (let i = 0; i < o.n; i++) {
       if (i === o.me) continue;
       const imp = Math.round(o.rng.gauss() * sigma * 10) / 10;
@@ -198,14 +198,14 @@ export class Belief {
     }
   }
 
-  // ---- 疑惑度の加減算 ----
+  // ---- adding to / subtracting from suspicion ----
   private scale(d: number): number {
-    // 攻撃的な人は疑う方向に、信用しやすい人は信じる方向に、より強く動く
+    // aggressive players move more strongly towards suspicion, trusting players more strongly towards trust
     return d > 0 ? d * (0.6 + (this.p.aggression / 100) * 0.8) : d * (0.6 + (this.p.trust / 100) * 0.8);
   }
   private apply(i: number, d: number, label: string, rk?: ReasonKey) {
-    if (this.masonMates.has(i) && this.masonPriv && d > 0 && this.susp[i] <= 1) return; // 相方の共有者は確定白。疑惑は付かない
-    // 学習したルール倍率(数万試合のロジスティック回帰で「このルールの増分はどれだけ人狼を当てるか」を推定したもの)
+    if (this.masonMates.has(i) && this.masonPriv && d > 0 && this.susp[i] <= 1) return; // my mason partner is confirmed white; no suspicion is added
+    // learned per-rule scale (estimated by logistic regression over tens of thousands of games: "how well does this rule's increment pick out werewolves")
     if (this.f.on('v_learned_scale')) { const m = this.ruleScale[ruleKey(label, this.names)]; if (m != null) d *= m; }
     const before = this.susp[i];
     const after = clamp(before + d, 1, 99);
@@ -225,14 +225,14 @@ export class Belief {
   private nm(i: number) {
     return this.names[i];
   }
-  // 確定白(自分の占いで白・相方の共有者・CO定員内の共有者)か
+  // whether confirmed white (white by my own divination, my mason partner, or a mason claimant within the seat count)
   isConfirmedWhite(i: number): boolean {
     return this.susp[i] <= 6 || (this.f.on('v_mason_white') && this.masonClaims.has(i) && this.masonClaims.size <= this.counts.mason);
   }
 
-  // ---- 観測の取り込み ----
+  // ---- taking in observations ----
   update(obs: PlayerObservation) {
-    if (this.usePrivate) this.onPrivate(obs); // 相方の共有者など、公開イベントの解釈に必要な非公開情報を先に取り込む
+    if (this.usePrivate) this.onPrivate(obs); // take in private information needed to interpret public events (e.g. my mason partner) first
     const evs = obs.events;
     for (; this.cursor < evs.length; this.cursor++) this.onEvent(evs[this.cursor]);
     this.refreshSeer();
@@ -335,7 +335,7 @@ export class Belief {
       case 'vote_review':
       case 'medium_review':
       case 'line':
-        // 考察による指摘: 疑いとほぼ同じ扱い(名指しとして熱に数える)。ラインは相手(ref)にも弱く
+        // a call-out from analysis: treated much like an accusation (counted in heat as naming someone). A line also applies weakly to the other party (ref)
         if (st.target != null) {
           this.stance.set(by, st.target);
           this.lastAccuse = { by, target: st.target };
@@ -344,7 +344,7 @@ export class Belief {
         }
         break;
       case 'propose':
-        // 進行提案: 「今日の吊り先」の矛先として熱に数える
+        // a plan proposal: counted in heat as a target for "today's execution"
         if (st.plan === 'black' && st.target != null) this.stance.set(by, st.target);
         else if (st.plan === 'roller') {
           const t = this.leastTrustedClaimant();
@@ -357,19 +357,19 @@ export class Belief {
       case 'attack_review':
         break;
       case 'waver':
-        // ブレの指摘: 会話の取っ掛かり。推理には使わない(--rules で人狼と村側の差がゼロだった。矛先にも数えない)
+        // calling out wavering: a conversation starter. Not used for reasoning (--rules showed zero difference between werewolves and the village side; not counted as a target either)
         if (st.target != null && this.f.on('v_waver')) this.add(st.target, this.W.waverPoint, `${this.nm(by)}にブレを指摘された`, 'vote_hist');
         break;
       case 'bite_logic':
-        // 噛み筋: 「かばっていた人は白寄り」は正解率75%で使う。「疑っていた人は黒寄り」は差がゼロだったので会話だけ(矛先にも数えない)
+        // bite logic: "whoever the victim defended leans white" is 75% accurate, so it is used. "whoever the victim suspected leans black" showed zero difference, so conversation only (not counted as a target either)
         if (st.target != null && this.f.on('v_bite_logic')) {
           if (st.color === 'black') this.add(st.target, this.W.biteLogic, `噛まれた${st.ref != null ? this.nm(st.ref) : '人'}が疑っていた(噛み筋)`, 'kill_contra');
           else this.add(st.target, -this.W.biteLogicWhite, `噛まれた${st.ref != null ? this.nm(st.ref) : '人'}がかばっていた(噛み筋)`);
         }
         break;
       case 'confirm':
-        // 確定の宣言: 矛先として数えると、噛まれた本物の残り(偽物=人狼か狂人)を吊る流れが強まり村側−1.3pt(狂人吊りで1日消える)。
-        // 発言としては自然なので残し、推理・熱には使わない(破綻の確定だけは矛先に数える)
+        // a "confirmed" declaration: counting it as a target strengthens the push to execute the claimant left after the real one was bitten (a fake = wolf or madman), costing the village side −1.3pt (executing the madman wastes a day).
+        // It is natural as speech so it stays, but is not used for reasoning or heat (only a confirmed broken claim counts as a target)
         if (st.target != null && st.reason === 'broken') {
           this.stance.set(by, st.target);
           this.lastAccuse = { by, target: st.target };
@@ -444,15 +444,15 @@ export class Belief {
     }
     if (target != null && color && !c.results.some((r) => r.target === target)) {
       c.results.push({ target, color, day, applied: 0 });
-      // 呪殺が出た朝に死んだ人への白判定 → 占っていたのは本物らしい
+      // a white result on someone who died on a curse-kill morning → the seer who divined them is probably real
       if (color === 'white' && this.attacked.has(target) && this.curseLikely(day) && (this.deathsByDay.get(day) ?? []).includes(target)) {
         this.applyCurseEvidence(target, day);
         return;
       }
-      // すでに白黒が判明している人への判定なら、その場で信憑性に反映(白の一致は弱い根拠)
+      // a result on someone whose white/black is already known is applied to credibility at once (a matching white is weak evidence)
       const known = this.knownColor(target);
       if (known) this.judgeClaim(c, known === color, `${this.nm(target)}への判定が既知の結果と${known === color ? '一致' : '矛盾'}`, known === color && color === 'white' ? this.whiteMatchW() : 1);
-      // 他の占い師COと同じ人に別の色 → どちらかは偽物
+      // a different colour from another seer claimant on the same player → one of them is fake
       this.crossCheckSeer(c, target, color);
     }
   }
@@ -461,7 +461,7 @@ export class Belief {
       this.mediumClaims.set(by, { by, day, comp: 0 });
       this.warnHuman(by, '霊能者');
       if (this.mediumView()) this.add(by, this.W.fakeMedium, `霊能者を名乗った(本物は私)`, 'fake_seer');
-      // 霊能騙りは稀(騙っても得が少ない)ので、定員内の霊能COはほぼ本物として扱う
+      // fake medium claims are rare (little to gain from them), so a within-seat-count medium claim is treated as almost certainly real
       else if (this.mediumClaims.size <= this.counts.medium) this.add(by, this.W.mediumTrust, '霊能CO(定員内)');
     }
     if (target != null && color && !this.mediumView()) {
@@ -474,29 +474,29 @@ export class Belief {
     this.masonClaims.set(by, { by, comp: 0 });
     if (this.usePrivate && this.selfRole === 'mason' && !this.masonMates.has(by)) this.add(by, this.W.fakeMason, `共有者を名乗った(相方ではない)`, 'fake_mason');
   }
-  // 生きている狩人COの人数(定員の判定は生存者で数える。処刑・襲撃で消えたCOは枚数に入れない)
+  // number of living hunter claimants (the seat count check counts only the living; claimants removed by execution or bite are not counted)
   aliveHunterClaims(): number {
     let n = 0;
     for (const h of this.hunterClaims) if (this.aliveNow[h]) n++;
     return n;
   }
-  // 狩人COの翌朝の「判定チェック」。人狼は狩人COを噛みに行くのが定石なので、朝の結果で2通りに読む。
-  //  ・平和な朝(死者なし) → 人狼が噛みに行き、護衛で止めた形。生き残った狩人COは本物寄り(護衛成功の判定チェック)
-  //  ・誰かが死んだ → 人狼は狩人COを噛みに行かなかった=仲間(人狼)の可能性。噛まれない晩が続くほど疑いが増す
+  // the "result check" on the morning after a hunter claim. Standard play is for wolves to go after the hunter claimant, so the morning is read in two ways:
+  //  - peaceful morning (no deaths) → looks like the wolves went for a bite and a guard stopped it. The surviving hunter claimant leans real (successful-guard result check)
+  //  - someone died → the wolves did not go after the hunter claimant = possibly their mate (a werewolf). Suspicion grows with every night they go unbitten
   private checkHunterUnbitten(day: number) {
     if (!this.f.on('v_hunter_unbitten')) return;
     const peace = (this.deathsByDay.get(day) ?? []).length === 0;
     for (const h of this.hunterClaims) {
       if (!this.aliveNow[h] || h === this.me) continue;
       const cd = this.hunterClaimDay.get(h) ?? day;
-      if (cd >= day) continue; // 今日COしたばかり(まだ夜を越していない)
-      if (peace) continue; // 平和な朝=護衛成功の可能性。疑わない。本物寄りの加点は本人の護衛報告(regHunter)が朝の結果と一致したときに行う
+      if (cd >= day) continue; // claimed only today (has not survived a night yet)
+      if (peace) continue; // peaceful morning = possibly a successful guard. Don't suspect. The leans-real credit is given when the claimant's own guard report (regHunter) matches the morning
       const n = (this.hunterSurvived.get(h) ?? 0) + 1;
       this.hunterSurvived.set(h, n);
       this.add(h, this.W.hunterUnbitten * n, `狩人COなのに${n}晩噛まれていない(人狼は仲間を噛まない)`, 'fake_hunter');
     }
   }
-  // 狩人COが噛まれずに越した夜の数(0なら吊り候補から外す減点が効く)
+  // number of nights a hunter claimant survived unbitten (if 0, the penalty that keeps them off the execution candidates applies)
   hunterUnbittenNights(t: number): number {
     return this.hunterSurvived.get(t) ?? 0;
   }
@@ -507,8 +507,8 @@ export class Belief {
       this.hunterClaimDay.set(by, this.day);
       if (this.aliveHunterClaims() <= this.counts.hunter) this.add(by, this.W.hunterTrust, '狩人CO(定員内)');
     }
-    // 護衛成功の報告の判定チェック: 今朝が平和な朝(死者なし)で守った相手が生きていれば報告と事実が一致=本物寄り。
-    // 今朝に死者が出ているのに「守った」と言うのは矛盾(偽物)。人狼は狩人COを噛みに行くのが定石なので、噛みに来て止めた形は真の狩人らしい
+    // result check of a successful-guard report: if this morning was peaceful (no deaths) and the guarded player is alive, the report matches the facts = leans real.
+    // Saying "I guarded" when someone died this morning is a contradiction (fake). Standard play is for wolves to go after the hunter claimant, so a bite that was stopped looks like the real hunter
     if (guarded != null && by !== this.me && !this.hunterGjDay.has(by * 100 + this.day)) {
       this.hunterGjDay.add(by * 100 + this.day);
       const peace = (this.deathsByDay.get(this.day) ?? []).length === 0;
@@ -525,13 +525,13 @@ export class Belief {
       }
     }
   }
-  // 一番信憑性の低い生存占い師CO
+  // the living seer claimant with the lowest credibility
   leastTrustedClaimant(): number | null {
     let best: number | null = null;
     for (const c of this.seerClaims.values()) if (c.by !== this.me && this.aliveNow[c.by] && (best == null || this.seerTrust(c.by) < this.seerTrust(best))) best = c.by;
     return best;
   }
-  // 役職COしていない生存者のうち、一番疑わしい人
+  // the most suspicious living player who has not claimed a role
   topGrey(): number | null {
     let best: number | null = null;
     for (let i = 0; i < this.n; i++) {
@@ -540,44 +540,44 @@ export class Belief {
     }
     return best;
   }
-  // その人の(直近の日の)発言回数
+  // that player's number of statements (on the most recent day)
   spokeCount(p: number): number {
     const m = this.spoke.get(this.day);
     return m?.get(p) ?? 0;
   }
-  // その日の各人の最後の矛先(疑い/賛成/投票宣言/指摘)
+  // each player's last target that day (accusation / agreement / vote declaration / call-out)
   stanceOn(day: number): Map<number, number> | undefined {
     return this.stanceByDay.get(day);
   }
-  // その日にその人がかばった相手
+  // whom each player defended that day
   defendsOn(day: number): { by: number; target: number }[] {
     return this.defends.get(day) ?? [];
   }
-  // 今日、指名して意見を求められたか
+  // whether the player was named and asked for an opinion today
   wasAsked(p: number, day: number): boolean {
     return this.askedToday.get(p) === day;
   }
-  // 占い師COの出た順番(0が最初)。COしていなければ -1
+  // order of the seer claim (0 = first). -1 if they have not claimed
   seerCoIndex(p: number): number {
     return [...this.seerClaims.keys()].indexOf(p);
   }
-  // 襲撃された占い師CO(本物と見られる)
+  // seer claimants who were bitten (seen as real)
   attackedSeerClaimants(): number[] {
     return [...this.seerClaims.keys()].filter((c) => this.attacked.has(c));
   }
-  // 昨日の投票(公開情報)
+  // yesterday's votes (public information)
   votesOn(day: number): Map<number, number> | undefined {
     return this.votes.get(day);
   }
-  // 昨日の処刑者
+  // yesterday's executed player
   executedOn(day: number): number | null {
     return this.execs.find((e) => e.day === day)?.target ?? null;
   }
-  // 朝に死んだ人(その日)
+  // players who died in the morning (of that day)
   deathsOn(day: number): number[] {
     return this.deathsByDay.get(day) ?? [];
   }
-  // 信頼できる占い師の黒先で生きている人
+  // living players given a black by a trusted seer
   trustedBlackTargets(): number[] {
     const out: number[] = [];
     for (const c of this.seerClaims.values()) {
@@ -589,17 +589,17 @@ export class Belief {
     return out;
   }
 
-  // 公開情報で判明している色: 襲撃された=白、霊能で判明した処刑者
+  // colour known from public information: bitten = white, or an executed player revealed by the medium
   private knownColor(t: number): Color | null {
     if (this.attacked.has(t)) return 'white';
     return this.confirmed.get(t) ?? null;
   }
-  // 白判定が当たる事前確率は高い(人外の割合ぶんだけ外れる)ので、白の一致はその分だけ割り引く
+  // a white result has a high prior of being right (it is wrong only as often as non-humans occur), so a matching white is discounted accordingly
   private whiteMatchW(): number {
     const alive = Math.max(2, this.aliveCount());
     return clamp((this.counts.werewolf + this.counts.fox) / (alive - 1), 0.15, 0.5) * 1.2;
   }
-  // 占い師同士の矛盾: 同じ人に別の色を出した2人は、少なくとも一方が偽物(両方とも少し信憑性を下げる)
+  // contradiction between seers: of two who gave different colours to the same player, at least one is fake (lower both credibilities a little)
   private crossCheckSeer(c: SeerClaim, target: number, color: Color) {
     for (const o of this.seerClaims.values()) {
       if (o.by === c.by) continue;
@@ -616,24 +616,24 @@ export class Belief {
     c.noteDir = consistent ? -1 : 1;
   }
 
-  // 処刑者の白黒が判明したときの波及
+  // knock-on effects when an executed player's white/black becomes known
   private confirmExec(target: number, color: Color, q: number) {
     if (this.confirmed.has(target)) return;
     this.confirmed.set(target, color);
     for (const c of this.seerClaims.values()) {
-      // 処刑された占い師COが黒だった → 偽物確定(その人の判定は逆に読む)
+      // an executed seer claimant was black → confirmed fake (their results are read in reverse)
       if (this.f.on('v_fake_confirmed') && c.by === target && color === 'black') {
         c.raw *= 0.02;
         c.note = `処刑された${this.nm(target)}は黒(偽占い師と判明)`;
       }
       for (const r of c.results) {
         if (r.target !== target) continue;
-        // 情報量で重みづけ: 「白と言った人が白だった」はほぼ誰でも当たる(人外は少数)ので弱い証拠。
-        // 黒の一致・白黒の矛盾は強い証拠
+        // weighted by information content: "said white, was white" is right for almost anyone (non-humans are few), so it is weak evidence.
+        // A matching black, or a white/black contradiction, is strong evidence
         const match = r.color === color;
         const qq = match && color === 'white' ? q * this.whiteMatchW() : q;
         this.judgeClaim(c, match, `${this.nm(target)}の判定が霊能結果と${match ? (color === 'white' ? '一致(白なので弱い根拠)' : '一致(黒)') : '矛盾'}`, qq);
-        // 破綻: 黒を出した相手が霊能(定員内=ほぼ本物)で白 → その占い師は偽物で確定。吊り候補の最上位に
+        // broken claim: the player they gave a black was white per the medium (within seat count = almost certainly real) → that seer is confirmed fake. Top of the execution candidates
         if (!match && r.color === 'black' && this.mediumClaims.size <= this.counts.medium && !c.broken) {
           c.broken = true;
           c.raw = Math.min(c.raw, 0.02);
@@ -643,7 +643,7 @@ export class Belief {
     }
     const ex = this.execs.find((e) => e.target === target);
     if (!ex) return;
-    // 処刑された狩人COが黒 → 対抗していた残りの狩人CO(定員内)は本物寄り
+    // an executed hunter claimant was black → the remaining rival hunter claimant (within seat count) leans real
     if (color === 'black' && this.hunterClaims.has(target) && this.aliveHunterClaims() <= this.counts.hunter) {
       for (const h of this.hunterClaims) if (h !== target && h !== this.me && this.aliveNow[h]) this.add(h, this.W.hunterRivalBlack * q, `対抗の狩人CO ${this.nm(target)}が霊能で黒。残った狩人COは本物寄り`, 'hunter_gj');
     }
@@ -660,25 +660,25 @@ export class Belief {
     }
   }
 
-  // ---- 妖狐対策(村側) ----
-  // 呪殺が起きた形跡があるか(朝の死体2つ、または初日の朝の死体)
+  // ---- countering the fox (village side) ----
+  // whether there are signs of a curse-kill (two bodies in a morning, or a body on the first morning)
   curseSeen(): boolean {
     for (const d of this.deathsByDay.keys()) if (this.curseLikely(d)) return true;
     return false;
   }
-  // 残っている人狼の見込み(霊能で黒と判明した処刑者、または信頼できる占い師が黒を出して処刑された人を引く)
+  // estimate of werewolves remaining (subtract executed players revealed black by the medium, or executed players given a black by a trusted seer)
   wolvesLeftMax(): number {
     const dead = new Set<number>();
     for (const [t, c] of this.confirmed) if (c === 'black') dead.add(t);
     for (const c of this.seerClaims.values()) {
-      // 他人の占いは信憑性が高いときだけ数える(本物の占い師も、対抗の黒を人狼として数えない。自分の黒は下で台帳から数える)
+      // count other players' divinations only when credibility is high (the real seer, too, does not count a rival's blacks as werewolves; my own blacks are counted from the ledger below)
       if (c.by === this.me || this.seerTrust(c.by) < 0.6) continue;
       for (const r of c.results) if (r.color === 'black' && this.execs.some((e) => e.target === r.target)) dead.add(r.target);
     }
     if (this.usePrivate && this.selfRole === 'seer') for (const it of this.execs) if (this.ledger[it.target].some((x) => x.label.startsWith('自分の占いで黒'))) dead.add(it.target);
     return Math.max(0, this.counts.werewolf - dead.size);
   }
-  // 妖狐の可能性がある人: 妖狐がいる村で呪殺の形跡がなく、信憑性の高い占い師に占われていない(占われた妖狐は死ぬ)
+  // a possible fox: in a village with a fox, with no sign of a curse-kill, and not divined by a high-credibility seer (a divined fox dies)
   foxCandidate(t: number): boolean {
     if (this.counts.fox === 0 || this.curseSeen() || !this.aliveNow[t] || t === this.me) return false;
     if (this.seerClaims.has(t) || this.mediumClaims.has(t)) return false;
@@ -686,24 +686,24 @@ export class Belief {
     if (this.usePrivate && this.selfRole === 'seer') return !this.ledger[t].some((it) => it.label.startsWith('自分の占い'));
     return true;
   }
-  // 終盤の妖狐警戒: 人狼が残り1以下と見られ、吊りに余裕があるとき、最後の人狼より先に妖狐候補を吊る
-  // (妖狐を残したまま人狼を全滅させると妖狐の勝ちになる)
+  // late-game fox caution: when at most one werewolf seems left and there are executions to spare, execute fox candidates before the last werewolf
+  // (eliminating all werewolves while the fox is alive makes the fox win)
   foxPressure(t: number): number {
     if (!this.foxCandidate(t)) return 0;
     const wl = this.wolvesLeftMax();
     if (wl > this.f.v('foxPressureWolves')) return 0;
-    const margin = this.aliveCount() - 2 * wl; // 人間側の余裕(これが小さいと人狼を吊らないと負ける)
+    const margin = this.aliveCount() - 2 * wl; // the human side's margin (if small, the village loses unless it executes a werewolf)
     if (margin < 3) return 0;
     return this.f.v('foxPressureW');
   }
 
-  // 妖狐がいる村で、朝の死体が2つ(または初日の朝に死体) → どちらかは呪殺
+  // in a village with a fox, two bodies in a morning (or a body on the first morning) → one of them is a curse-kill
   private curseLikely(day: number): boolean {
     if (this.counts.fox === 0) return false;
     const n = this.deathsByDay.get(day)?.length ?? 0;
     return n >= 2 || (day === 1 && n >= 1);
   }
-  // 呪殺が起きた朝: その死者に白を出していた(=占っていた)占い師COは本物の可能性が高い
+  // on a curse-kill morning: a seer claimant who gave that dead player a white (= divined them) is likely real
   private onCurse(day: number) {
     for (const t of this.deathsByDay.get(day) ?? []) this.applyCurseEvidence(t, day);
   }
@@ -720,11 +720,11 @@ export class Belief {
   }
 
   private seerUnbittenNights = 0;
-  // 朝: 死者が出たのに占いCOが誰も噛まれていない → 占いCOが2人以上なら全員を少しずつ疑う(本物なら噛まれる。GJの朝は判断保留)
+  // morning: someone died but no seer claimant was bitten → with 2+ seer claims, suspect all of them a little (a real one would be bitten; reserve judgement on a GJ morning)
   private checkSeerUnbitten(day: number) {
     if (!this.f.on('v_seer_unbitten')) return;
     const deaths = this.deathsByDay.get(day) ?? [];
-    if (!deaths.length) return; // 平和な朝(護衛成功か)は保留
+    if (!deaths.length) return; // peaceful morning (successful guard?): reserve judgement
     const alive = [...this.seerClaims.values()].filter((c) => this.aliveNow[c.by] && c.by !== this.me);
     if (alive.length < 2 || deaths.some((d) => this.seerClaims.has(d))) return;
     this.seerUnbittenNights++;
@@ -735,15 +735,15 @@ export class Belief {
   }
   private onAttacked(target: number) {
     const attackedIsClaimant = this.seerClaims.has(target);
-    // 残る偽物の人数: 2人以上なら狼が混ざっている可能性が高くローラー対象、1人なら狂人の可能性が高い(2-1の残り)
+    // number of fakes left: 2 or more likely includes a wolf, so they are roller targets; 1 is likely the madman (the one left of a 2-1)
     const remaining = attackedIsClaimant ? [...this.seerClaims.values()].filter((c) => c.by !== target && this.aliveNow[c.by] && c.by !== this.me).length : 0;
     for (const c of this.seerClaims.values()) {
       if (c.by === target) {
         c.raw *= this.f.on('v_attacked_real') ? 1.8 : 1;
         c.note = '襲撃された占い師(本物寄り)';
       } else if (attackedIsClaimant && remaining >= 2 && this.f.on('v_fake_confirmed_attack') && !c.fakeConfirmed && this.aliveNow[c.by]) {
-        // 残りが1人(2-1の残り)は何もしない: 狂人の可能性が高く放置が定石。狂人が噛まれて本物が残った場合の保険にもなる
-        // 本物の占い師が噛まれた → 残った占いCOは偽物(人狼か狂人)で確定。判定は逆に読む(囲いの白は黒寄り)
+        // if only one is left (the one left of a 2-1), do nothing: likely the madman, and leaving them is standard play. Also a safeguard in case the madman was bitten and the real seer remains
+        // the real seer was bitten → the remaining seer claimants are confirmed fake (wolf or madman). Read their results in reverse (a fencing white leans black)
         c.fakeConfirmed = true;
         c.raw = Math.min(c.raw, this.W.fakeConfirmedRaw);
         c.note = `本物らしい${this.nm(target)}が噛まれた→偽物の可能性が高い`;
@@ -767,7 +767,7 @@ export class Belief {
     }
   }
 
-  // ---- 占い師の信憑性 ----
+  // ---- seer credibility ----
   private rawOf(c: SeerClaim): number {
     if (this.selfRole !== 'werewolf' && c.results.some((r) => r.target === this.me && r.color === 'black')) return Math.min(c.raw, 0.02);
     return c.raw;
@@ -775,8 +775,8 @@ export class Belief {
   seerTrust(c: number): number {
     const claim = this.seerClaims.get(c);
     if (!claim) return 0;
-    if (this.usePrivate && this.selfRole === 'seer') return 0; // 本物は自分
-    if (this.f.on('a_viewpoint') && this.myClaim === 'seer' && c !== this.me) return 0; // 自分が占い師を名乗っている以上、対抗は(表向き)偽物。対抗の判定は信じない
+    if (this.usePrivate && this.selfRole === 'seer') return 0; // I am the real one
+    if (this.f.on('a_viewpoint') && this.myClaim === 'seer' && c !== this.me) return 0; // since I claim seer, the rival is (publicly) fake. Don't believe the rival's results
     const claims = [...this.seerClaims.values()];
     const sum = claims.reduce((s, x) => s + this.rawOf(x), 0);
     let t = this.rawOf(claim) / (sum + 0.25);
@@ -784,11 +784,11 @@ export class Belief {
     return clamp(t, 0, 1);
   }
 
-  // 役職CO者を吊り候補から外す減点(セオリー: 吊りはグレーから。役職吊りは定員超過か矛盾が出たときの最終手段)
-  //  - 本物らしい占い師: 信憑性に比例(seerPenalty)
-  //  - 定員内の霊能CO: 霊能騙りは稀で、吊っても狼である可能性が低い(吊り数の無駄)
-  //  - 定員内の狩人CO: 吊るより噛ませたほうが村の得(人狼が吊らせたがる)
-  // 「自分が霊能者」の視点か(本物、または霊能者を名乗っている)
+  // penalty that keeps role claimants off the execution candidates (theory: execute from the greys; executing a role claimant is a last resort when claims exceed the seat count or a contradiction appears)
+  //  - a likely-real seer: proportional to credibility (seerPenalty)
+  //  - a within-seat-count medium claimant: fake medium claims are rare, so executing one is unlikely to hit a wolf (a wasted execution)
+  //  - a within-seat-count hunter claimant: better for the village to let the wolves bite them than to execute them (the wolves want them executed)
+  // whether reasoning from the "I am the medium" viewpoint (real, or claiming medium)
   private mediumView(): boolean {
     return (this.usePrivate && this.selfRole === 'medium') || (this.f.on('a_viewpoint') && this.myClaim === 'medium');
   }
@@ -799,7 +799,7 @@ export class Belief {
     if (this.hunterClaims.has(t) && this.aliveHunterClaims() <= this.counts.hunter && this.hunterUnbittenNights(t) === 0) p += this.W.hunterVotePenalty;
     return p;
   }
-  // 本物らしい占い師を疑う/投票する候補の減点(信憑性に比例)。偽物らしい占い師には付かない
+  // penalty on accusing/voting for a likely-real seer (proportional to credibility). Not applied to a likely-fake seer
   seerPenalty(t: number): number {
     if (!this.f.on('v_seer_penalty') || !this.seerClaims.has(t)) return 0;
     const tr = this.seerTrust(t);
@@ -812,28 +812,28 @@ export class Belief {
       if (c.by === this.me) continue;
       const t = this.seerTrust(c.by);
       const pct = Math.round(t * 100);
-      // COへの疑惑(信憑性が低いほど大きい)。3人以上のCOでは1人あたり少し弱める。
-      // 複数COでまだ決め手がない(信憑性が均等)うちは undecidedComp 倍(1=初日からローラー / 0=決め手が出るまで吊らない)
+      // suspicion on the claim (larger the lower the credibility). With 3+ claims it is weakened a little per claimant.
+      // While there are multiple claims and no decisive evidence yet (credibility even), multiply by undecidedComp (1 = roller from day one / 0 = don't execute until decisive evidence appears)
       const undecided = nClaims >= 2 && Math.abs(t - 1 / nClaims) < 0.12;
-      // compPow>1 にすると、信憑性が高い占い師への疑いが早く消える(0.6なら (0.4)^2=0.16 倍)
+      // with compPow>1, suspicion on a high-credibility seer fades faster (at 0.6: (0.4)^2 = ×0.16)
       const comp = Math.pow(1 - t, this.W.compPow) * this.W.fakeSeer * (nClaims >= 3 ? 0.8 : 1) * (undecided ? this.f.v('undecidedComp') : 1);
       const diff = comp - c.fakeComp;
       if (Math.abs(diff) > 0.4 && this.aliveNow[c.by]) {
         const multi = nClaims > 1;
-        // 本物は1人なので、決め手がないうちは「CO n人中 n-1 人が人外」= 1人あたり (n-1)/n の確率で人外
+        // only one is real, so without decisive evidence "n-1 of the n claimants are non-human" = each is non-human with probability (n-1)/n
         const prior = Math.round(((nClaims - 1) / nClaims) * 100);
         const structural = multi ? `占い師CO${nClaims}人中の一人(本物は1人→人外の確率${prior}%、信憑性${pct}%)` : `占い師CO(信憑性${pct}%)`;
-        // 直前の判定(一致/矛盾)の向きと変化の向きが合うときだけ、その判定を理由として記す
+        // record the latest judgement (match/contradiction) as the reason only when its direction matches the direction of the change
         const label = c.note && Math.sign(diff) === c.noteDir ? c.note : structural;
         this.addRaw(c.by, diff, label, multi ? 'counter_co' : 'fake_seer');
         c.fakeComp = comp;
       }
-      // 判定の反映: 信憑性が低い占い師の判定は「逆」に読む(偽の黒先は白寄り、偽の白先は黒寄り)
-      // 偽物確定(本物が噛まれた/破綻)の判定は逆に読む(囲いの白→黒寄り、偽の黒→白寄り)
+      // applying results: a low-credibility seer's results are read "in reverse" (a fake's black target leans white, a fake's white target leans black)
+      // results of a confirmed fake (real seer bitten / broken claim) are read in reverse (fencing white → leans black, fake black → leans white)
       const eff = c.broken ? -0.5 : c.fakeConfirmed ? -this.W.fakeConfirmedReverse : this.f.on('v_reverse') ? t - this.W.fakeReverse * (1 - t) : t;
       for (const r of c.results) {
-        // 白は信憑性の whitePow 乗で効かせる: 真偽不明の占い師の白(囲いの可能性)はほぼ無視し、本物と見えてきた占い師の白だけ信じる
-        // eff<0(偽物確定)なら白は疑い(囲い)、黒は白寄り
+        // a white takes effect as credibility to the power whitePow: whites from a seer of unknown truth (possible fencing) are almost ignored; only whites from a seer who is starting to look real are believed
+        // if eff<0 (confirmed fake), a white means suspicion (fencing) and a black leans white
         const base = r.color === 'black' ? this.W.seerBlack * eff : eff < 0 ? this.W.seerWhite * -eff : -this.W.seerWhite * Math.pow(eff, this.W.whitePow);
         const desired = this.scale(base);
         const d = desired - r.applied;
@@ -842,7 +842,7 @@ export class Belief {
           const label = first
             ? `占い師${this.nm(c.by)}の判定(${cw(r.color)}) 信憑性${pct}%`
             : `${this.nm(c.by)}の信憑性が変化→${this.nm(r.target)}への判定`;
-          this.addRaw(r.target, d, label, r.color === 'black' ? 'seer_black' : undefined); // 取り消し(d<0)も同じ根拠キーで記録し、有効な根拠の合計に反映する
+          this.addRaw(r.target, d, label, r.color === 'black' ? 'seer_black' : undefined); // a retraction (d<0) is recorded under the same reason key, so it is reflected in the net total of valid reasons
           r.applied = desired;
         }
       }
@@ -850,8 +850,8 @@ export class Belief {
     }
   }
 
-  // 共有者CO(定員内)は確定白として扱う。
-  // ※ 霊能者COの定員超過をCO全員に分配する規則は、村側の勝率を下げたので外した(霊能ローラーで本物を吊ってしまう)
+  // a mason claim (within the seat count) is treated as confirmed white.
+  // Note: the rule that spread suspicion over all medium claimants when they exceeded the seat count was removed because it lowered the village win rate (a medium roller executes the real one)
   private refreshClaims() {
     if (this.usePrivate && this.selfRole === 'mason') return;
     const over = this.masonClaims.size > this.counts.mason;
@@ -865,7 +865,7 @@ export class Belief {
     }
   }
 
-  // ---- 問い合わせ ----
+  // ---- queries ----
   aliveCount(): number {
     return this.aliveNow.filter(Boolean).length;
   }
@@ -884,8 +884,8 @@ export class Belief {
     });
     return c;
   }
-  // 公開してよい根拠(その人に付いた疑惑の中で一番大きい"言える理由")
-  // 根拠ごとの「現在有効な」増分(取り消しも含めた合計)で選ぶ。信憑性が落ちて黒判定が取り消された占いを根拠にしない
+  // a reason that may be stated publicly (the largest "sayable reason" among the suspicion attached to that player)
+  // chosen by each reason's "currently valid" increment (net of retractions). A divination whose black was retracted after credibility fell is not used as a reason
   publicReason(t: number): ReasonKey | undefined {
     const net = new Map<ReasonKey, number>();
     for (const it of this.ledger[t]) if (it.rk) net.set(it.rk, (net.get(it.rk) ?? 0) + it.delta);
